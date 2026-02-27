@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mi Cesta</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Crimson+Pro:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ink: #1c1917;
+  --paper: #faf7f2;
+  --cream: #f0ebe0;
+  --warm: #e8e0d0;
+  --lidl-h: #0055b3;
+  --lidl-s: #ffd700;
+  --lidl-bg: #eef4ff;
+  --ahorra-h: #d4213d;
+  --ahorra-bg: #fff0f2;
+  --merca-h: #008040;
+  --merca-bg: #edfaf3;
+  --muted: #9c9489;
+  --rule: #d8d0c0;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Syne', sans-serif; background: var(--paper); color: var(--ink); min-height: 100vh; overflow-x: hidden; }
+
+/* HEADER */
+.app-header {
+  position: sticky; top: 0; z-index: 200;
+  background: var(--ink); color: var(--paper);
+  padding: 0 20px; display: flex; align-items: center;
+  justify-content: space-between; height: 56px; gap: 12px;
+}
+.app-title { font-size: 1rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; }
+.app-title span { color: var(--lidl-s); }
+.header-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.btn-nav {
+  padding: 6px 12px; border-radius: 6px;
+  border: 1.5px solid rgba(255,255,255,0.2); background: none;
+  color: var(--paper); font-family: 'Syne', sans-serif;
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; cursor: pointer; transition: all 0.2s; white-space: nowrap;
+}
+.btn-nav:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.4); }
+.btn-nav.active { color: var(--lidl-s); border-color: var(--lidl-s); background: rgba(255,215,0,0.08); }
+.btn-nav.danger:hover { border-color: var(--ahorra-h); color: #ff8090; }
+
+/* VIEWS */
+.view { display: none; animation: fadeUp 0.28s ease; }
+.view.active { display: block; }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+/* SHOP LAYOUT */
+.shop-layout { display: grid; grid-template-columns: 210px 1fr; min-height: calc(100vh - 56px); }
+
+/* SIDEBAR */
+.sidebar {
+  background: var(--cream); border-right: 2px solid var(--rule);
+  padding: 20px 0; position: sticky; top: 56px;
+  height: calc(100vh - 56px); overflow-y: auto;
+}
+.sb-section { padding: 0 14px 18px; }
+.sb-label { font-size: 0.62rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; padding: 0 2px; }
+
+.store-card {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 11px 12px; border-radius: 10px; cursor: pointer;
+  border: 2px solid transparent; margin-bottom: 5px;
+  transition: all 0.18s; position: relative; overflow: hidden;
+}
+.store-card::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+  width: 3px; border-radius: 0 2px 2px 0;
+}
+.store-card.lidl::before { background: var(--lidl-h); }
+.store-card.ahorra::before { background: var(--ahorra-h); }
+.store-card.merca::before { background: var(--merca-h); }
+.store-card:hover { background: var(--warm); }
+.store-card.active.lidl { background: var(--lidl-bg); border-color: var(--lidl-h); }
+.store-card.active.ahorra { background: var(--ahorra-bg); border-color: var(--ahorra-h); }
+.store-card.active.merca { background: var(--merca-bg); border-color: var(--merca-h); }
+
+.sc-name { font-size: 0.82rem; font-weight: 700; }
+.store-card.lidl .sc-name { color: var(--lidl-h); }
+.store-card.ahorra .sc-name { color: var(--ahorra-h); }
+.store-card.merca .sc-name { color: var(--merca-h); }
+.sc-meta { font-size: 0.7rem; color: var(--muted); display: flex; justify-content: space-between; }
+.mini-bar { height: 3px; background: var(--rule); border-radius: 2px; margin-top: 5px; overflow: hidden; }
+.mini-fill { height: 100%; border-radius: 2px; transition: width 0.4s; }
+.store-card.lidl .mini-fill { background: var(--lidl-h); }
+.store-card.ahorra .mini-fill { background: var(--ahorra-h); }
+.store-card.merca .mini-fill { background: var(--merca-h); }
+
+.sb-hr { border: none; border-top: 1.5px solid var(--rule); margin: 0 14px 18px; }
+
+/* TOTAL BLOCK */
+.total-block {
+  margin: 0 14px; background: var(--ink);
+  color: var(--paper); border-radius: 10px; padding: 14px;
+}
+.tb-title { font-size: 0.62rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+.tb-row { display: flex; justify-content: space-between; font-size: 0.76rem; margin-bottom: 5px; }
+.tb-store { color: rgba(255,255,255,0.55); }
+.tb-val { font-weight: 600; }
+.tb-grand { display: flex; justify-content: space-between; align-items: baseline; border-top: 1px solid rgba(255,255,255,0.12); margin-top: 8px; padding-top: 8px; }
+.tb-grand-label { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--lidl-s); }
+.tb-grand-val { font-size: 1.2rem; font-weight: 800; }
+
+/* PANEL */
+.store-panel { padding: 28px 28px 60px; max-width: 660px; background: #23201c; min-height: calc(100vh - 56px); }
+.panel-top { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 6px; gap: 12px; }
+.panel-title { font-size: 1.9rem; font-weight: 800; letter-spacing: -0.02em; }
+.lidl-c { color: var(--lidl-h); }
+.ahorra-c { color: var(--ahorra-h); }
+.merca-c { color: var(--merca-h); }
+.panel-stat { text-align: right; }
+.panel-frac { font-size: 1.35rem; font-weight: 800; }
+.panel-pct { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em; color: rgba(255,255,255,0.4); }
+
+.prog-bar { height: 5px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-bottom: 22px; overflow: hidden; }
+.prog-fill { height: 100%; border-radius: 3px; transition: width 0.5s cubic-bezier(.34,1.56,.64,1); }
+.lidl-fill { background: var(--lidl-h); }
+.ahorra-fill { background: var(--ahorra-h); }
+.merca-fill { background: var(--merca-h); }
+
+/* ADD ROW */
+.add-row { display: flex; gap: 8px; margin-bottom: 20px; }
+.add-in {
+  flex: 1; padding: 10px 14px; border: 1.5px solid rgba(255,255,255,0.12);
+  border-radius: 10px; font-family: 'Syne', sans-serif;
+  font-size: 0.88rem; background: rgba(255,255,255,0.07); color: white; outline: none;
+  transition: border-color 0.2s;
+}
+.add-in::placeholder { color: rgba(255,255,255,0.3); }
+.add-in:focus { border-color: rgba(255,255,255,0.35); }
+.btn-add {
+  padding: 10px 18px; border: none; border-radius: 10px;
+  cursor: pointer; font-family: 'Syne', sans-serif;
+  font-size: 1rem; font-weight: 700; color: white;
+  transition: transform 0.12s, opacity 0.2s;
+}
+.btn-add:active { transform: scale(0.94); }
+.btn-add:hover { opacity: 0.85; }
+.lidl-btn { background: var(--lidl-h); }
+.ahorra-btn { background: var(--ahorra-h); }
+.merca-btn { background: var(--merca-h); }
+
+.btn-finish {
+  width: 100%; padding: 14px; margin-top: 28px;
+  background: rgba(255,255,255,0.1); border: 1.5px solid rgba(255,255,255,0.2);
+  border-radius: 12px; color: white; font-family: 'Syne', sans-serif;
+  font-size: 0.85rem; font-weight: 700; letter-spacing: 0.07em;
+  text-transform: uppercase; cursor: pointer; transition: all 0.2s;
+}
+.btn-finish:hover { background: rgba(255,255,255,0.16); border-color: rgba(255,255,255,0.4); }
+
+/* ITEMS */
+.sec-head {
+  font-size: 0.63rem; font-weight: 700; letter-spacing: 0.12em;
+  text-transform: uppercase; color: rgba(255,255,255,0.35);
+  padding: 12px 0 5px; border-top: 1px solid rgba(255,255,255,0.08); margin-top: 4px;
+}
+.sec-head:first-child { border-top: none; margin-top: 0; padding-top: 0; }
+.sec-head.in-cart { color: var(--lidl-s); }
+
+.item-row {
+  display: flex; align-items: center; gap: 11px;
+  padding: 9px 10px; border-radius: 10px; cursor: pointer;
+  transition: background 0.18s;
+  margin-bottom: 2px; animation: pop 0.16s ease;
+}
+@keyframes pop { from { transform: scale(0.85); opacity: 0; } 60% { transform: scale(1.03); } to { transform: scale(1); opacity: 1; } }
+.item-row:hover { background: rgba(255,255,255,0.07); }
+.item-row:hover .del-btn { opacity: 1; }
+.item-row.done { opacity: 0.85; }
+.item-row.done .item-label { color: #ff6b6b; }
+.item-row.done .item-label { text-decoration: none; }
+.item-row.done::before { content: '✓'; font-size: 0.75rem; font-weight: 700; color: rgba(255,255,255,0.4); flex-shrink: 0; width: 16px; }
+.item-label { flex: 1; font-size: 1.08rem; font-weight: 400; user-select: none; color: rgba(255,255,255,0.92); letter-spacing: 0.01em; }
+.del-btn {
+  background: none; border: none; cursor: pointer;
+  color: rgba(255,255,255,0.3); font-size: 0.88rem; padding: 3px 6px;
+  border-radius: 5px; opacity: 0; transition: opacity 0.18s, color 0.18s;
+}
+.del-btn:hover { color: #ff6b6b; }
+
+/* MODAL */
+.modal-overlay {
+  display: none; position: fixed; inset: 0; z-index: 500;
+  background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
+  align-items: center; justify-content: center; padding: 20px;
+}
+.modal-overlay.open { display: flex; animation: fadeUp 0.22s ease; }
+.modal {
+  background: #1c1917; border: 1.5px solid rgba(255,255,255,0.12);
+  border-radius: 18px; padding: 28px; width: 100%; max-width: 420px;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+}
+.modal-title { font-size: 1.4rem; font-weight: 800; color: white; margin-bottom: 4px; }
+.modal-sub { font-family: 'Crimson Pro', serif; font-style: italic; font-size: 0.9rem; color: rgba(255,255,255,0.4); margin-bottom: 24px; }
+.modal-store-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.modal-store-row:last-of-type { border-bottom: none; }
+.modal-store-name { font-size: 0.85rem; font-weight: 700; min-width: 90px; }
+.modal-items-count { font-size: 0.75rem; color: rgba(255,255,255,0.35); flex: 1; }
+.modal-price-wrap { display: flex; align-items: center; gap: 5px; }
+.modal-price-wrap span { color: rgba(255,255,255,0.4); font-weight: 700; }
+.modal-price-in {
+  width: 88px; text-align: right; padding: 7px 10px;
+  border: 1.5px solid rgba(255,255,255,0.15); border-radius: 8px;
+  font-family: 'Syne', sans-serif; font-size: 1rem; font-weight: 700;
+  background: rgba(255,255,255,0.07); color: white; outline: none;
+  transition: border-color 0.2s;
+}
+.modal-price-in:focus { border-color: rgba(255,255,255,0.4); }
+.modal-divider { border: none; border-top: 1.5px solid rgba(255,255,255,0.1); margin: 18px 0; }
+.modal-total-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 20px; }
+.modal-total-label { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.4); }
+.modal-total-val { font-size: 1.8rem; font-weight: 800; color: var(--lidl-s); }
+.modal-actions { display: flex; gap: 10px; }
+.btn-modal-confirm {
+  flex: 1; padding: 13px; background: #fff; color: #1c1917;
+  border: none; border-radius: 10px; font-family: 'Syne', sans-serif;
+  font-size: 0.82rem; font-weight: 800; letter-spacing: 0.06em;
+  text-transform: uppercase; cursor: pointer; transition: opacity 0.2s;
+}
+.btn-modal-confirm:hover { opacity: 0.88; }
+.btn-modal-cancel {
+  padding: 13px 18px; background: none; color: rgba(255,255,255,0.4);
+  border: 1.5px solid rgba(255,255,255,0.12); border-radius: 10px;
+  font-family: 'Syne', sans-serif; font-size: 0.82rem; font-weight: 700;
+  cursor: pointer; transition: all 0.2s;
+}
+.btn-modal-cancel:hover { border-color: rgba(255,255,255,0.3); color: rgba(255,255,255,0.7); }
+
+/* HISTORY */
+.hist-view { padding: 28px; max-width: 700px; margin: 0 auto; }
+.hist-title { font-size: 1.9rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 4px; color: var(--lidl-s); }
+.hist-sub { font-family: 'Crimson Pro', serif; font-style: italic; font-size: 0.9rem; color: var(--muted); margin-bottom: 24px; }
+.hist-actions { display: flex; gap: 10px; margin-bottom: 28px; flex-wrap: wrap; }
+.btn-archive {
+  padding: 11px 22px; background: var(--ink); color: var(--paper);
+  border: none; border-radius: 10px; font-family: 'Syne', sans-serif;
+  font-size: 0.8rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; cursor: pointer; transition: opacity 0.2s;
+}
+.btn-archive:hover { opacity: 0.8; }
+.btn-clr-hist {
+  padding: 11px 18px; background: none; color: var(--muted);
+  border: 1.5px solid var(--rule); border-radius: 10px;
+  font-family: 'Syne', sans-serif; font-size: 0.76rem; font-weight: 700;
+  cursor: pointer; transition: all 0.2s;
+}
+.btn-clr-hist:hover { border-color: var(--ahorra-h); color: var(--ahorra-h); }
+
+.hist-empty {
+  text-align: center; padding: 60px 20px;
+  color: var(--muted); font-family: 'Crimson Pro', serif;
+  font-style: italic; font-size: 1.05rem; line-height: 1.8;
+}
+
+.hist-entry {
+  background: white; border: 2px solid var(--rule);
+  border-radius: 14px; margin-bottom: 14px; overflow: hidden;
+  transition: box-shadow 0.2s;
+}
+.hist-entry:hover { box-shadow: 0 4px 18px rgba(0,0,0,0.07); }
+.hist-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px; cursor: pointer; gap: 10px;
+}
+.hist-date { font-size: 0.76rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.hist-total { font-size: 1.25rem; font-weight: 800; }
+.hist-head-right { display: flex; align-items: center; gap: 10px; }
+.hist-tog { color: var(--muted); font-size: 0.8rem; transition: transform 0.2s; }
+.hist-entry.open .hist-tog { transform: rotate(180deg); }
+.hist-body { display: none; padding: 0 18px 14px; }
+.hist-entry.open .hist-body { display: block; }
+.hist-srow {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 7px 0; border-bottom: 1px solid var(--cream);
+}
+.hist-srow:last-child { border-bottom: none; }
+.hist-sname { font-size: 0.8rem; font-weight: 700; min-width: 80px; }
+.hist-sitems { font-family: 'Crimson Pro', serif; font-size: 0.86rem; color: var(--muted); flex: 1; line-height: 1.4; }
+.hist-sprice { font-size: 0.88rem; font-weight: 700; white-space: nowrap; }
+.hist-del {
+  background: none; border: none; cursor: pointer;
+  color: var(--muted); font-size: 0.85rem; padding: 3px 6px;
+  border-radius: 5px; transition: color 0.18s;
+}
+.hist-del:hover { color: var(--ahorra-h); }
+
+/* MOBILE */
+@media (max-width: 660px) {
+  .shop-layout { grid-template-columns: 1fr; }
+  .sidebar {
+    position: relative; top: 0; height: auto;
+    border-right: none; border-bottom: 2px solid var(--rule);
+    padding: 12px 0 0; display: flex; overflow-x: auto; scrollbar-width: none;
+  }
+  .sidebar::-webkit-scrollbar { display: none; }
+  .sb-section { padding: 0 8px; flex-shrink: 0; }
+  .sb-label { display: none; }
+  .sb-hr { display: none; }
+  .total-block { min-width: 150px; margin-bottom: 12px; }
+  .store-panel { padding: 18px 16px 50px; }
+  .hist-view { padding: 18px 16px; }
+}
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <div class="app-title">🛒 Mi <span>Cesta</span></div>
+  <div class="header-actions">
+    <button class="btn-nav active" id="nav-shop" onclick="showView('shop')">Lista</button>
+    <button class="btn-nav" id="nav-hist" onclick="showView('hist')">Historial</button>
+    <button class="btn-nav danger" onclick="resetAll()">Reiniciar</button>
+  </div>
+</header>
+
+<!-- SHOP -->
+<div class="view active" id="view-shop">
+  <div class="shop-layout">
+    <nav class="sidebar">
+      <div class="sb-section">
+        <div class="sb-label">Supermercados</div>
+        <div class="store-card lidl active" onclick="selectStore('lidl')">
+          <div class="sc-name">LIDL</div>
+          <div class="sc-meta"><span id="sb-lidl-cnt">—</span><span id="sb-lidl-px">—</span></div>
+          <div class="mini-bar"><div class="mini-fill" id="sb-lidl-bar" style="width:0%"></div></div>
+        </div>
+        <div class="store-card ahorra" onclick="selectStore('ahorra')">
+          <div class="sc-name">Ahorramás</div>
+          <div class="sc-meta"><span id="sb-ahorra-cnt">—</span><span id="sb-ahorra-px">—</span></div>
+          <div class="mini-bar"><div class="mini-fill" id="sb-ahorra-bar" style="width:0%"></div></div>
+        </div>
+        <div class="store-card merca" onclick="selectStore('merca')">
+          <div class="sc-name">Mercadona</div>
+          <div class="sc-meta"><span id="sb-merca-cnt">—</span><span id="sb-merca-px">—</span></div>
+          <div class="mini-bar"><div class="mini-fill" id="sb-merca-bar" style="width:0%"></div></div>
+        </div>
+      </div>
+      <hr class="sb-hr">
+      <div class="sb-section">
+        <div class="total-block">
+          <div class="tb-title">💰 Gasto sesión</div>
+          <div class="tb-row"><span class="tb-store">LIDL</span><span class="tb-val" id="tot-lidl">—</span></div>
+          <div class="tb-row"><span class="tb-store">Ahorramás</span><span class="tb-val" id="tot-ahorra">—</span></div>
+          <div class="tb-row"><span class="tb-store">Mercadona</span><span class="tb-val" id="tot-merca">—</span></div>
+          <div class="tb-grand">
+            <span class="tb-grand-label">Total</span>
+            <span class="tb-grand-val" id="tot-all">—</span>
+          </div>
+        </div>
+      </div>
+    </nav>
+    <div id="panel-content"></div>
+  </div>
+</div>
+
+<!-- HISTORY -->
+<div class="view" id="view-hist">
+  <div class="hist-view">
+    <div class="hist-title">Historial</div>
+    <div class="hist-sub">Registro de todas las compras archivadas</div>
+    <div class="hist-actions">
+      <button class="btn-archive" onclick="archiveShopping()">📦 Archivar compra actual</button>
+      <button class="btn-clr-hist" onclick="clearHistory()">Borrar historial</button>
+    </div>
+    <div id="hist-list"></div>
+  </div>
+</div>
+
+<!-- MODAL FINALIZAR -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
+  <div class="modal">
+    <div class="modal-title">Finalizar compra</div>
+    <div class="modal-sub">Introduce el precio final por supermercado</div>
+    <div id="modal-store-rows"></div>
+    <hr class="modal-divider">
+    <div class="modal-total-row">
+      <span class="modal-total-label">Total gastado</span>
+      <span class="modal-total-val" id="modal-grand">—</span>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" onclick="closeModal()">Cancelar</button>
+      <button class="btn-modal-confirm" onclick="confirmFinish()">✓ Guardar y archivar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const DEFAULTS = {
+  lidl: ["Chocolate"],
+  ahorra: ["Ajo","Kakis","Avena sin gluten","Nescafé bote descafeinado","Cacao puro","Harina trigo sarraceno","Fideos sin gluten","Garbanzos","Manzanas","Arroz integral","Calabacín","Pepinos","Bonito del norte (vidrio)","Leche pequeña","Kiwis","Zanahorias","Philadelphia","Tomates cherry","Mayonesa","Fresas","Huevos","Ternera","Lomo ibérico","Patatas","Puerros","Pechugas de pollo","Pan","Carne picada","Batatas","Pimiento verde","Tomates","Naranjas","Lentejas"],
+  merca: ["Albal","Fresas congeladas","Peras","Higos","Picos sin gluten","Palitos canela","Tostas sin gluten","Nuez Brasil","Horno","Patatas pequeñas","Palillos","Papel higiénico","Desatascador","Pipas de calabaza","Base lasaña","Quinoa","Almendras","Bonito del norte (lata)","Bolsas congelar","Crema cacahuete","Bolsa pimientos congelados","Hojaldre sin gluten","Macarrones sin gluten","Queso feta","Chorizo","Pimiento piquillo","Caldo de pollo","Harina trigo espelta","Regañas","Chocolate Cris","Yogur","Avellanas","Base empanada","Tomate natural","Fritada","Queso rayado elemental","Queso fresco batido","Bacon","York","Servilletas","Papel cocina","Tisús","Toallitas","Pan desayuno (integral)","Bolsas basura","Pistachos tostados","Nueces","Tortitas","Plátanos","Aguacates","Mandarinas","Espinacas congeladas","Claras","Aceite spray","Gambones","Ketchup Zero","Lubina","Queso oveja","Jamón","Pollo"]
+};
+const LABELS = { lidl:'LIDL', ahorra:'Ahorramás', merca:'Mercadona' };
+const COLORS = { lidl:'lidl-c', ahorra:'ahorra-c', merca:'merca-c' };
+
+let S = load();
+let activeStore = 'lidl';
+
+function load() {
+  try { const r = localStorage.getItem('cesta3'); if (r) return JSON.parse(r); } catch(e){}
+  return makeDefault();
+}
+function makeDefault() {
+  const items = {};
+  for (const [s,ns] of Object.entries(DEFAULTS)) items[s] = ns.map(n=>({id:uid(),name:n,done:false}));
+  return { items, prices:{lidl:'',ahorra:'',merca:''}, history:[] };
+}
+function save() { try { localStorage.setItem('cesta3', JSON.stringify(S)); } catch(e){} }
+function uid() { return Math.random().toString(36).slice(2,9); }
+
+function showView(v) {
+  ['shop','hist'].forEach(id => {
+    document.getElementById('view-'+id).classList.toggle('active', id===v);
+    document.getElementById('nav-'+id).classList.toggle('active', id===v);
+  });
+  if (v==='hist') renderHistory();
+}
+
+// SIDEBAR
+function renderSidebar() {
+  for (const s of ['lidl','ahorra','merca']) {
+    const items = S.items[s];
+    const done = items.filter(i=>i.done).length;
+    const total = items.length;
+    const pct = total ? (done/total*100) : 0;
+    document.getElementById(`sb-${s}-cnt`).textContent = `${done}/${total}`;
+    const p = S.prices[s];
+    document.getElementById(`sb-${s}-px`).textContent = p ? `${parseFloat(p).toFixed(2)}€` : '—';
+    document.getElementById(`sb-${s}-bar`).style.width = pct+'%';
+    document.getElementById(`tot-${s}`).textContent = p ? `${parseFloat(p).toFixed(2)}€` : '—';
+  }
+  const vals = ['lidl','ahorra','merca'].map(s=>parseFloat(S.prices[s])||0);
+  const sum = vals.reduce((a,b)=>a+b,0);
+  document.getElementById('tot-all').textContent = vals.some(v=>v>0) ? `${sum.toFixed(2)}€` : '—';
+}
+
+// STORE SELECT
+function selectStore(s) {
+  activeStore = s;
+  document.querySelectorAll('.store-card').forEach(c=>c.classList.remove('active'));
+  document.querySelector(`.store-card.${s}`).classList.add('active');
+  renderPanel();
+}
+
+// PANEL
+function renderPanel() {
+  const s = activeStore;
+  const items = S.items[s];
+  const done = items.filter(i=>i.done).length;
+  const total = items.length;
+  const pct = total ? Math.round(done/total*100) : 0;
+  const undone = items.filter(i=>!i.done);
+  const doneList = items.filter(i=>i.done);
+  const colorCls = COLORS[s];
+  const p = S.prices[s];
+
+  let rows = '';
+  if (undone.length) {
+    rows += `<div class="sec-head">Por comprar · ${undone.length}</div>`;
+    undone.forEach(it => rows += itemRow(it, s));
+  }
+  if (doneList.length) {
+    rows += `<div class="sec-head in-cart">En el carrito · ${doneList.length}</div>`;
+    doneList.forEach(it => rows += itemRow(it, s));
+  }
+  if (!total) rows = `<div style="text-align:center;padding:40px 20px;color:var(--muted);font-family:'Crimson Pro',serif;font-style:italic">Lista vacía. Añade algo 👆</div>`;
+
+  document.getElementById('panel-content').innerHTML = `
+    <div class="store-panel">
+      <div class="panel-top">
+        <div class="panel-title ${colorCls}">${LABELS[s]}</div>
+        <div class="panel-stat">
+          <div class="panel-frac ${colorCls}">${done}<span style="font-weight:300;opacity:0.4">/${total}</span></div>
+          <div class="panel-pct">${pct}% en carrito</div>
+        </div>
+      </div>
+      <div class="prog-bar"><div class="prog-fill ${s}-fill" style="width:${pct}%"></div></div>
+
+      <div class="add-row">
+        <input type="text" class="add-in" id="ai-${s}" placeholder="Añadir artículo..." onkeydown="if(event.key==='Enter')addItem('${s}')">
+        <button class="btn-add ${s}-btn" onclick="addItem('${s}')">＋</button>
+      </div>
+
+      <div id="ilist-${s}">${rows}</div>
+
+      <button class="btn-finish" onclick="openModal()">🛒 Finalizar compra</button>
+    </div>
+  `;
+}
+
+function itemRow(it, s) {
+  const dc = it.done ? 'done' : '';
+  return `
+    <div class="item-row ${dc} ${s}-item" id="ir-${it.id}" onclick="toggleItem('${s}','${it.id}')">
+      <div class="item-label">${it.name}</div>
+      <button class="del-btn" onclick="delItem(event,'${s}','${it.id}')">✕</button>
+    </div>`;
+}
+
+function toggleItem(s, id) {
+  const it = S.items[s].find(i=>i.id===id);
+  if (it) { it.done = !it.done; save(); renderSidebar(); renderPanel(); }
+}
+function delItem(e, s, id) {
+  e.stopPropagation();
+  S.items[s] = S.items[s].filter(i=>i.id!==id);
+  save(); renderSidebar(); renderPanel();
+}
+function addItem(s) {
+  const inp = document.getElementById(`ai-${s}`);
+  const name = inp.value.trim();
+  if (!name) return;
+  S.items[s].unshift({id:uid(), name, done:false});
+  save(); renderSidebar(); renderPanel();
+  setTimeout(()=>{ const el=document.getElementById(`ai-${s}`); if(el)el.focus(); },40);
+}
+function onPrice(s) {
+  const val = document.getElementById(`pi-${s}`).value;
+  S.prices[s] = val;
+  save(); renderSidebar();
+}
+
+// MODAL
+function openModal() {
+  const overlay = document.getElementById('modal-overlay');
+  // build store rows
+  let html = '';
+  for (const s of ['lidl','ahorra','merca']) {
+    const items = S.items[s];
+    const inCart = items.filter(i=>i.done).length;
+    const total = items.length;
+    const p = S.prices[s];
+    html += `
+      <div class="modal-store-row">
+        <div class="modal-store-name ${COLORS[s]}">${LABELS[s]}</div>
+        <div class="modal-items-count">${inCart} de ${total} artículos</div>
+        <div class="modal-price-wrap">
+          <input type="number" class="modal-price-in" id="mp-${s}" value="${p}" placeholder="0.00" min="0" step="0.01" oninput="updateModalTotal()">
+          <span>€</span>
+        </div>
+      </div>`;
+  }
+  document.getElementById('modal-store-rows').innerHTML = html;
+  updateModalTotal();
+  overlay.classList.add('open');
+}
+
+function updateModalTotal() {
+  const vals = ['lidl','ahorra','merca'].map(s => {
+    const el = document.getElementById(`mp-${s}`);
+    return el ? (parseFloat(el.value) || 0) : 0;
+  });
+  const sum = vals.reduce((a,b)=>a+b,0);
+  document.getElementById('modal-grand').textContent = vals.some(v=>v>0) ? `${sum.toFixed(2)}€` : '—';
+}
+
+function closeModal(e) {
+  if (e && e.target !== document.getElementById('modal-overlay')) return;
+  document.getElementById('modal-overlay').classList.remove('open');
+}
+
+function confirmFinish() {
+  // save prices from modal
+  for (const s of ['lidl','ahorra','merca']) {
+    const el = document.getElementById(`mp-${s}`);
+    if (el) S.prices[s] = el.value;
+  }
+  save();
+  renderSidebar();
+
+  // archive
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('es-ES',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  const entry = { id:uid(), date:dateStr, ts:now.getTime(), stores:{} };
+  let hasData = false;
+  for (const s of ['lidl','ahorra','merca']) {
+    const checked = S.items[s].filter(i=>i.done).map(i=>i.name);
+    const price = S.prices[s];
+    if (checked.length || price) { entry.stores[s] = {items:checked, price:price||null}; hasData=true; }
+  }
+  if (hasData) {
+    S.history.unshift(entry);
+    save();
+  }
+
+  document.getElementById('modal-overlay').classList.remove('open');
+  showView('hist');
+}
+
+function resetAll() {
+  if (!confirm('¿Reiniciar la lista actual? El historial se conserva.')) return;
+  const d = makeDefault();
+  S.items = d.items;
+  S.prices = {lidl:'',ahorra:'',merca:''};
+  save(); renderSidebar(); renderPanel();
+}
+
+// HISTORY
+function archiveShopping() {
+  openModal();
+  showView('shop');
+}
+
+function clearHistory() {
+  if (!confirm('¿Borrar todo el historial?')) return;
+  S.history = []; save(); renderHistory();
+}
+function delHistEntry(id) {
+  S.history = S.history.filter(e=>e.id!==id); save(); renderHistory();
+}
+function toggleHistEntry(id) {
+  document.getElementById('he-'+id).classList.toggle('open');
+}
+
+function renderHistory() {
+  const el = document.getElementById('hist-list');
+  if (!S.history.length) {
+    el.innerHTML = `<div class="hist-empty">Aún no hay compras archivadas.<br>Marca artículos, registra el precio<br>y pulsa "Archivar compra actual".</div>`;
+    return;
+  }
+  el.innerHTML = S.history.map(entry => {
+    let total = 0, hasPrice = false;
+    for (const sd of Object.values(entry.stores)) { if(sd.price){total+=parseFloat(sd.price);hasPrice=true;} }
+    const totalStr = hasPrice ? `${total.toFixed(2)}€` : 'Sin precio';
+
+    const storesHTML = Object.entries(entry.stores).map(([s, sd]) => {
+      const priceStr = sd.price ? `${parseFloat(sd.price).toFixed(2)}€` : '—';
+      const sample = sd.items.length ? sd.items.slice(0,7).join(', ')+(sd.items.length>7?` y ${sd.items.length-7} más…`:'') : 'Sin artículos marcados';
+      return `<div class="hist-srow">
+        <div class="hist-sname ${COLORS[s]}">${LABELS[s]}</div>
+        <div class="hist-sitems">${sample}</div>
+        <div class="hist-sprice">${priceStr}</div>
+      </div>`;
+    }).join('');
+
+    return `
+      <div class="hist-entry" id="he-${entry.id}">
+        <div class="hist-head" onclick="toggleHistEntry('${entry.id}')">
+          <div class="hist-date">${entry.date}</div>
+          <div class="hist-head-right">
+            <div class="hist-total">${totalStr}</div>
+            <button class="hist-del" onclick="event.stopPropagation();delHistEntry('${entry.id}')">🗑</button>
+            <div class="hist-tog">▼</div>
+          </div>
+        </div>
+        <div class="hist-body">${storesHTML}</div>
+      </div>`;
+  }).join('');
+}
+
+// INIT
+renderSidebar();
+renderPanel();
+</script>
+</body>
+</html>
