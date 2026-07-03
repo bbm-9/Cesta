@@ -586,6 +586,19 @@ body { font-family: 'Syne', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-
   </div>
 </div>
 
+<!-- ══════════════ MODAL RECUPERAR DATOS ANTIGUOS ══════════════ -->
+<div class="modal-overlay" id="legacy-overlay" onclick="closeLegacyModal(event)">
+  <div class="modal">
+    <div class="modal-title">Recuperar datos antiguos</div>
+    <div class="modal-sub">Perfiles encontrados en la copia anterior (Firebase). Elige el tuyo.</div>
+    <div id="legacy-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px"></div>
+    <div class="login-error" id="legacy-error"></div>
+    <div class="modal-actions" style="margin-top:8px">
+      <button class="btn-modal-cancel" onclick="closeLegacyModal()">Cerrar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══════════════ MODAL FINALIZAR COMPRA ══════════════ -->
 <div class="fin-overlay" id="fin-overlay" onclick="closeFinModal(event)">
   <div class="modal">
@@ -912,7 +925,10 @@ function renderPanel() {
     activeStore = D.stores.length ? D.stores[0].id : null;
   }
   if (!activeStore) {
-    document.getElementById('panel-content').innerHTML = `<div class="store-panel"><div style="text-align:center;padding:60px 20px;color:var(--muted);font-family:'Crimson Pro',serif;font-style:italic">Añade un supermercado para empezar 👆</div></div>`;
+    document.getElementById('panel-content').innerHTML = `<div class="store-panel"><div style="text-align:center;padding:60px 20px;color:var(--muted);font-family:'Crimson Pro',serif;font-style:italic">
+      Añade un supermercado para empezar 👆<br>
+      <span style="font-size:0.8rem">¿Tenías datos en la versión anterior? <a href="javascript:void(0)" onclick="openLegacyImport()" style="color:var(--gold)">Recuperar copia antigua</a></span>
+    </div></div>`;
     return;
   }
   const st = D.stores.find(s=>s.id===activeStore);
@@ -1052,6 +1068,56 @@ function deleteStore(e, sid) {
 }
 
 // ══════════════════════════════════════════
+//  RECUPERAR DATOS ANTIGUOS (copia de Firebase, antes de migrar a Supabase)
+// ══════════════════════════════════════════
+const LEGACY_FIREBASE_URL = 'https://mi-cesta-default-rtdb.europe-west1.firebasedatabase.app/.json';
+let _legacyRemote = null;
+
+async function openLegacyImport() {
+  const listEl = document.getElementById('legacy-list');
+  const errEl = document.getElementById('legacy-error');
+  listEl.innerHTML = '<div style="color:rgba(255,255,255,0.4);font-size:0.85rem">Buscando…</div>';
+  errEl.textContent = '';
+  document.getElementById('legacy-overlay').classList.add('open');
+  try {
+    const res = await fetch(LEGACY_FIREBASE_URL);
+    if (!res.ok) throw new Error('No se pudo conectar con la copia antigua (' + res.status + ')');
+    const remote = await res.json();
+    if (remote && remote.error) throw new Error('Acceso denegado a la copia antigua: ' + remote.error);
+    _legacyRemote = remote;
+    const users = remote && remote.users ? Object.values(remote.users) : [];
+    if (!users.length) { listEl.innerHTML = ''; errEl.textContent = 'No se encontraron perfiles en la copia antigua.'; return; }
+    listEl.innerHTML = users.map(u => `
+      <button class="user-preview" style="width:100%;border:1.5px solid rgba(255,255,255,0.12);cursor:pointer;text-align:left;font-family:'Syne',sans-serif;outline:none" onclick="importLegacyUser('${u.id}')">
+        <div class="up-avatar" style="background:${u.color||'#0055b3'}">${esc(initials(u.name||'?'))}</div>
+        <div class="up-name">${esc(u.name||'Sin nombre')}</div>
+      </button>`).join('');
+  } catch(e) {
+    listEl.innerHTML = '';
+    errEl.textContent = e.message || 'No se pudo recuperar la copia antigua.';
+  }
+}
+function closeLegacyModal(e) {
+  if (e && e.target !== document.getElementById('legacy-overlay')) return;
+  document.getElementById('legacy-overlay').classList.remove('open');
+}
+function importLegacyUser(oldId) {
+  const errEl = document.getElementById('legacy-error');
+  const oldData = _legacyRemote && _legacyRemote.userData && _legacyRemote.userData[oldId];
+  if (!oldData) { errEl.textContent = 'Ese perfil no tiene datos guardados.'; return; }
+  if (!confirm('Esto reemplazará tus supermercados, artículos e historial actuales por los de la copia antigua. ¿Continuar?')) return;
+  userDataCache = oldData;
+  migrateUserData(userDataCache);
+  saveUserData(currentUserId);
+  document.getElementById('legacy-overlay').classList.remove('open');
+  activeStore = userData().stores.length ? userData().stores[0].id : null;
+  checkMonthlyReset();
+  renderHeaderMonthly();
+  renderSidebar();
+  renderPanel();
+}
+
+// ══════════════════════════════════════════
 //  MODAL FINALIZAR
 // ══════════════════════════════════════════
 function openFinModal() {
@@ -1175,7 +1241,10 @@ function showHistTab(tab) {
 function renderHistory() {
   const D = userData(); if (!D) return;
   const el = document.getElementById('hist-list');
-  if (!D.history.length) { el.innerHTML=`<div class="hist-empty">Aún no hay compras archivadas.</div>`; return; }
+  if (!D.history.length) {
+    el.innerHTML = `<div class="hist-empty">Aún no hay compras archivadas.<br><span style="font-size:0.85rem">¿Tenías historial en la versión anterior? <a href="javascript:void(0)" onclick="openLegacyImport()">Recuperar copia antigua</a></span></div>`;
+    return;
+  }
   el.innerHTML = D.history.map(entry => {
     let total=0, hasPrice=false;
     for (const sd of Object.values(entry.stores)) { if(sd.price){total+=parseFloat(sd.price);hasPrice=true;} }
