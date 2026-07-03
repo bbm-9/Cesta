@@ -4,40 +4,55 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Mi Cesta</title>
-<!-- Firebase SDK -->
+<!-- Supabase SDK -->
 <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getDatabase, ref, set, get, onValue, off } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+  import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-  const firebaseConfig = {
-    apiKey: "AIzaSyA5HS7p1I2bPLhRSN-m2eWl8_zO9UlVVuc",
-    authDomain: "mi-cesta.firebaseapp.com",
-    databaseURL: "https://mi-cesta-default-rtdb.europe-west1.firebasedatabase.app",
-    projectId: "mi-cesta",
-    storageBucket: "mi-cesta.firebasestorage.app",
-    messagingSenderId: "878651317642",
-    appId: "1:878651317642:web:2947308ed474d66ae47c73"
-  };
+  // ⚠️ Rellena con los datos de tu proyecto: Supabase Dashboard → Settings → API
+  const SUPABASE_URL = "YOUR_SUPABASE_URL";
+  const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";
 
-  const app = initializeApp(firebaseConfig);
-  const db = getDatabase(app);
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-  // Exponer funciones Firebase al scope global
-  window._fb = {
-    saveUsers: (users) => set(ref(db, 'users'), users.map(u => ({id:u.id,name:u.name,color:u.color,passHash:u.passHash||null}))),
-    saveUserData: (uid, data) => set(ref(db, 'userData/' + uid), data),
-    loadAll: async () => {
-      const snap = await get(ref(db, '/'));
-      return snap.exists() ? snap.val() : null;
+  // Exponer funciones Supabase al scope global
+  window._sb = {
+    signUp: (email, password, name, color) => supabase.auth.signUp({
+      email, password, options: { data: { name, color } }
+    }),
+    signIn: (email, password) => supabase.auth.signInWithPassword({ email, password }),
+    signOut: () => supabase.auth.signOut(),
+    getSession: async () => (await supabase.auth.getSession()).data.session,
+    onAuthChange: (cb) => supabase.auth.onAuthStateChange(cb),
+    updatePassword: (password) => supabase.auth.updateUser({ password }),
+    getProfile: async (uid) => {
+      const { data, error } = await supabase.from('profiles').select('*').eq('id', uid).single();
+      if (error) throw error;
+      return data;
+    },
+    updateProfile: async (uid, fields) => {
+      const { error } = await supabase.from('profiles').update(fields).eq('id', uid);
+      if (error) throw error;
+    },
+    getUserData: async (uid) => {
+      const { data, error } = await supabase.from('user_data').select('data').eq('user_id', uid).single();
+      if (error) throw error;
+      return data?.data || null;
+    },
+    saveUserData: async (uid, data) => {
+      const { error } = await supabase.from('user_data').update({ data }).eq('user_id', uid);
+      if (error) throw error;
     },
     subscribeUserData: (uid, cb) => {
-      const r = ref(db, 'userData/' + uid);
-      onValue(r, snap => cb(snap.exists() ? snap.val() : null));
-      return () => off(r);
+      const channel = supabase.channel('user_data_' + uid)
+        .on('postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'user_data', filter: `user_id=eq.${uid}` },
+          payload => cb(payload.new.data))
+        .subscribe();
+      return () => supabase.removeChannel(channel);
     }
   };
-  window._fbReady = true;
-  document.dispatchEvent(new Event('fb-ready'));
+  window._sbReady = true;
+  document.dispatchEvent(new Event('sb-ready'));
 </script>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Crimson+Pro:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet">
 <style>
@@ -410,14 +425,38 @@ body { font-family: 'Syne', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-
 </head>
 <body>
 
-<!-- ══════════════ PANTALLA USUARIOS ══════════════ -->
-<div class="screen active" id="screen-users">
+<!-- ══════════════ PANTALLA LOGIN / REGISTRO ══════════════ -->
+<div class="screen active" id="screen-auth">
   <div class="users-screen">
     <div class="users-logo">🛒 Mi <span>Cesta</span></div>
-    <div class="users-sub">¿Quién va a hacer la compra?</div>
-    <div class="users-grid" id="users-grid"></div>
-    <div style="margin-top:8px;font-size:0.65rem;color:rgba(255,255,255,0.2);font-family:'Crimson Pro',serif;font-style:italic;text-align:center">
-      Pasa el ratón sobre un usuario para editarlo o eliminarlo
+    <div class="users-sub">Inicia sesión para continuar</div>
+    <div class="login-box" style="max-width:340px;text-align:left">
+      <div class="login-actions" style="margin-bottom:20px">
+        <button class="btn-nav active" id="atab-login" onclick="showAuthTab('login')" style="flex:1">Entrar</button>
+        <button class="btn-nav" id="atab-signup" onclick="showAuthTab('signup')" style="flex:1">Crear cuenta</button>
+      </div>
+
+      <div class="modal-field" id="su-name-field" style="display:none">
+        <label>Nombre</label>
+        <input type="text" class="modal-text-in" id="su-name" placeholder="Tu nombre" maxlength="18">
+      </div>
+      <div class="modal-field" id="su-color-field" style="display:none">
+        <label>Color de avatar</label>
+        <div class="color-palette" id="su-palette"></div>
+      </div>
+
+      <div class="modal-field">
+        <label>Email</label>
+        <input type="email" class="modal-text-in" id="auth-email" placeholder="tu@email.com" autocomplete="username">
+      </div>
+      <div class="modal-field">
+        <label>Contraseña</label>
+        <input type="password" class="modal-text-in" id="auth-pass" placeholder="Mínimo 6 caracteres" autocomplete="current-password" maxlength="72" onkeydown="if(event.key==='Enter')submitAuth()">
+      </div>
+      <div class="login-error" id="auth-error"></div>
+      <div class="login-actions">
+        <button class="btn-login" id="auth-submit-btn" onclick="submitAuth()" style="flex:1">Entrar</button>
+      </div>
     </div>
   </div>
 </div>
@@ -434,14 +473,14 @@ body { font-family: 'Syne', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-      <div class="header-user" onclick="logout()" title="Cambiar usuario">
+      <div class="header-user" onclick="openProfileModal()" title="Mi perfil">
         <div class="header-user-av" id="hdr-av"></div>
         <div class="header-user-name" id="hdr-name"></div>
       </div>
       <div class="header-actions">
         <button class="btn-nav active" id="nav-shop" onclick="showView('shop')">Lista</button>
         <button class="btn-nav" id="nav-hist" onclick="showView('hist')">Historial</button>
-        
+        <button class="btn-nav danger" onclick="logout()" title="Cerrar sesión">Salir</button>
       </div>
     </div>
   </header>
@@ -492,63 +531,34 @@ body { font-family: 'Syne', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-
   </div>
 </div>
 
-<!-- ══════════════ MODAL LOGIN ══════════════ -->
-<div class="login-overlay" id="login-overlay">
-  <div class="login-box">
-    <div class="login-avatar" id="login-av"></div>
-    <div class="login-name" id="login-uname"></div>
-    <div class="login-hint" id="login-hint"></div>
-    <input type="password" class="login-input" id="login-pass" placeholder="Contraseña" onkeydown="if(event.key==='Enter')doLogin()">
-    <div class="login-error" id="login-error"></div>
-    <div class="login-actions">
-      <button class="btn-login-cancel" onclick="closeLoginOverlay()">Cancelar</button>
-      <button class="btn-login" onclick="doLogin()">Entrar</button>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════ MODAL CONFIRMAR ELIMINAR USUARIO ══════════════ -->
-<div class="modal-overlay" id="del-user-overlay">
-  <div class="modal" style="max-width:320px;text-align:center;">
-    <div class="login-avatar" id="del-user-av" style="margin-bottom:12px"></div>
-    <div class="modal-title" style="text-align:center">¿Eliminar usuario?</div>
-    <div class="modal-sub" style="text-align:center;margin-bottom:20px">
-      Se eliminará <strong id="del-user-name" style="color:white"></strong> y todos sus datos. Esta acción no se puede deshacer.
-    </div>
-    <div class="modal-actions">
-      <button class="btn-modal-cancel" onclick="closeDelUserModal()">Cancelar</button>
-      <button class="btn-modal-confirm" style="background:#d4213d;color:white" onclick="doDeleteUser()">Eliminar</button>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════ MODAL CREAR / EDITAR USUARIO ══════════════ -->
-<div class="modal-overlay" id="new-user-overlay" onclick="closeNewUserModal(event)">
+<!-- ══════════════ MODAL MI PERFIL ══════════════ -->
+<div class="modal-overlay" id="profile-overlay" onclick="closeProfileModal(event)">
   <div class="modal">
-    <div class="modal-title" id="nu-modal-title">Nuevo usuario</div>
-    <div class="modal-sub" id="nu-modal-sub">Crea tu perfil personal</div>
+    <div class="modal-title">Mi perfil</div>
+    <div class="modal-sub">Actualiza tu nombre, color o contraseña</div>
     <div class="modal-field">
       <label>Nombre</label>
-      <input type="text" class="modal-text-in" id="nu-name" placeholder="Tu nombre" oninput="updateUserPreview()" maxlength="18">
+      <input type="text" class="modal-text-in" id="pf-name" placeholder="Tu nombre" oninput="updateProfilePreview()" maxlength="18">
     </div>
     <div class="modal-field">
-      <label id="nu-pass-label">Contraseña (opcional)</label>
-      <input type="password" class="modal-text-in pass" id="nu-pass" placeholder="Dejar vacío = sin contraseña" maxlength="32">
+      <label>Nueva contraseña (opcional)</label>
+      <input type="password" class="modal-text-in pass" id="pf-pass" placeholder="Dejar vacío = mantener la actual" maxlength="72">
     </div>
     <div class="modal-field">
       <label>Color de avatar</label>
-      <div class="color-palette" id="nu-palette"></div>
+      <div class="color-palette" id="pf-palette"></div>
     </div>
     <div class="modal-field">
       <label>Vista previa</label>
       <div class="user-preview">
-        <div class="up-avatar" id="nu-prev-av"></div>
-        <div class="up-name" id="nu-prev-name">—</div>
+        <div class="up-avatar" id="pf-prev-av"></div>
+        <div class="up-name" id="pf-prev-name">—</div>
       </div>
     </div>
+    <div class="login-error" id="pf-error"></div>
     <div class="modal-actions" style="margin-top:8px">
-      <button class="btn-modal-cancel" onclick="closeNewUserModal()">Cancelar</button>
-      <button class="btn-modal-confirm" id="nu-confirm-btn" onclick="confirmNewUser()">Crear</button>
+      <button class="btn-modal-cancel" onclick="closeProfileModal()">Cancelar</button>
+      <button class="btn-modal-confirm" id="pf-confirm-btn" onclick="confirmProfile()">Guardar</button>
     </div>
   </div>
 </div>
@@ -620,204 +630,127 @@ const DEFAULT_ITEMS = {
 // ══════════════════════════════════════════
 //  ESTADO GLOBAL
 // ══════════════════════════════════════════
-// DB: { users: [ { id, name, color, passHash, data: { stores, items, prices, history, monthlySpend, monthlyHistory } } ] }
-let DB = loadDB();
-let currentUserId = null;  // usuario en sesión
+let currentUserId = null;   // uid de Supabase Auth en sesión
+let profile = null;         // { id, name, color }
+let userDataCache = null;   // { stores, items, prices, history, monthlySpend, monthlyHistory }
 let activeStore = null;
 let selectedStoreColor = PALETTE[0];
-let selectedUserColor  = PALETTE[0];
-let pendingLoginUserId = null;
-let editingUserId = null;
+let selectedSignupColor = PALETTE[0];
+let selectedProfileColor = PALETTE[0];
+let authMode = 'login';
 
 function uid() { return Math.random().toString(36).slice(2,9); }
-function hashPass(p) {
-  // Hash simple (no criptográfico) suficiente para uso local
-  let h = 0;
-  for (let i = 0; i < p.length; i++) { h = (Math.imul(31, h) + p.charCodeAt(i)) | 0; }
-  return h.toString(36);
-}
 function initials(name) { return name.trim().split(/\s+/).map(w=>w[0].toUpperCase()).slice(0,2).join(''); }
 function hexToRgba(hex, a) {
   const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
   return `rgba(${r},${g},${b},${a})`;
 }
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 
 // ══════════════════════════════════════════
-//  PERSISTENCIA (Firebase + localStorage fallback)
+//  PERSISTENCIA (Supabase + localStorage como caché offline)
 // ══════════════════════════════════════════
-function loadDB() {
-  try { const r = localStorage.getItem('cesta_db'); if (r) return JSON.parse(r); } catch(e){}
-  return { users: [] };
-}
-
-async function initFromFirebase() {
-  if (!window._fb) return;
-  try {
-    const remote = await window._fb.loadAll();
-    if (remote && remote.users) {
-      // Reconstruir DB con usuarios de Firebase
-      const remoteUsers = Object.values(remote.users || {});
-      remoteUsers.forEach(ru => {
-        const local = DB.users.find(u => u.id === ru.id);
-        if (local) {
-          // Actualizar metadatos del usuario desde Firebase
-          local.name = ru.name; local.color = ru.color; local.passHash = ru.passHash;
-        } else {
-          DB.users.push({...ru, data: makeUserData()});
-        }
-      });
-      // Cargar datos de cada usuario
-      if (remote.userData) {
-        for (const [uid, data] of Object.entries(remote.userData)) {
-          const user = DB.users.find(u => u.id === uid);
-          if (user && data) user.data = data;
-        }
-      }
-      // Eliminar usuarios locales que ya no existen en Firebase (si Firebase tiene usuarios)
-      if (remoteUsers.length > 0) {
-        DB.users = DB.users.filter(u => remoteUsers.find(ru => ru.id === u.id));
-      }
-      saveLocalOnly();
-    }
-  } catch(e) { console.warn('Firebase no disponible, usando localStorage', e); }
-  renderUsersScreen();
-}
-
-function saveLocalOnly() {
-  try { localStorage.setItem('cesta_db', JSON.stringify(DB)); } catch(e) {}
-}
-
-function saveDB() {
-  saveLocalOnly();
-  if (!window._fb) return;
-  // Guardar lista de usuarios (sin datos de sesión)
-  window._fb.saveUsers(DB.users).catch(e => console.warn('Error guardando usuarios:', e));
-}
-
-function saveUserData(uid) {
-  saveLocalOnly();
-  if (!window._fb) return;
-  const user = DB.users.find(u => u.id === uid);
-  if (!user) return;
-  window._fb.saveUserData(uid, user.data).catch(e => console.warn('Error guardando datos:', e));
-}
-
 function makeUserData() {
   const now = new Date();
   return { stores:[], items:{}, prices:{}, history:[], monthlySpend:{amount:0,month:now.getMonth(),year:now.getFullYear()}, monthlyHistory:[] };
 }
 
-function userData() { return DB.users.find(u=>u.id===currentUserId)?.data; }
-function currentUser() { return DB.users.find(u=>u.id===currentUserId); }
+function userData() { return userDataCache; }
+function currentUser() { return profile; }
+
+function loadLocalCache(uid) {
+  try { const r = localStorage.getItem('cesta_data_' + uid); return r ? JSON.parse(r) : null; } catch(e) { return null; }
+}
+function saveLocalCache() {
+  if (!currentUserId || !userDataCache) return;
+  try { localStorage.setItem('cesta_data_' + currentUserId, JSON.stringify(userDataCache)); } catch(e) {}
+}
+
+async function loadUserData(uid) {
+  try {
+    const remote = await window._sb.getUserData(uid);
+    if (remote) { userDataCache = remote; saveLocalCache(); return; }
+  } catch(e) { console.warn('Supabase no disponible, usando caché local', e); }
+  userDataCache = loadLocalCache(uid) || makeUserData();
+}
+
+function saveUserData(uid) {
+  saveLocalCache();
+  if (!uid) return;
+  window._sb.saveUserData(uid, userDataCache).catch(e => console.warn('Error guardando datos:', e));
+}
 
 // ══════════════════════════════════════════
-//  PANTALLA USUARIOS
+//  LOGIN / REGISTRO
 // ══════════════════════════════════════════
-function renderUsersScreen() {
-  const grid = document.getElementById('users-grid');
-  let html = DB.users.map(u => `
-    <div class="user-card" onclick="selectUser('${u.id}')">
-      <button class="user-edit-btn" onclick="event.stopPropagation();openEditUserModal('${u.id}')" title="Editar">✏️</button>
-      <button class="user-del-btn" onclick="event.stopPropagation();confirmDeleteUser('${u.id}')" title="Eliminar">✕</button>
-      <div class="user-avatar" style="background:${u.color}">${initials(u.name)}</div>
-      <div class="user-name">${u.name}</div>
-    </div>`).join('');
-  html += `<button class="btn-add-user" onclick="openNewUserModal()">
-    <div class="btn-add-user-icon">＋</div>
-    <div class="btn-add-user-label">Nuevo</div>
-  </button>`;
-  grid.innerHTML = html;
+function showAuthTab(tab) {
+  authMode = tab;
+  document.getElementById('atab-login').classList.toggle('active', tab==='login');
+  document.getElementById('atab-signup').classList.toggle('active', tab==='signup');
+  document.getElementById('su-name-field').style.display = tab==='signup' ? '' : 'none';
+  document.getElementById('su-color-field').style.display = tab==='signup' ? '' : 'none';
+  if (tab==='signup') buildPalette('su-palette', selectedSignupColor, 'selectSignupColor');
+  document.getElementById('auth-submit-btn').textContent = tab==='signup' ? 'Crear cuenta' : 'Entrar';
+  const errEl = document.getElementById('auth-error');
+  errEl.style.color = '';
+  errEl.textContent = '';
+}
+function selectSignupColor(c) {
+  selectedSignupColor = c;
+  buildPalette('su-palette', c, 'selectSignupColor');
 }
 
-function confirmDeleteUser(uid) {
-  const user = DB.users.find(u=>u.id===uid);
-  if (!user) return;
-  document.getElementById('del-user-name').textContent = user.name;
-  document.getElementById('del-user-av').style.background = user.color;
-  document.getElementById('del-user-av').textContent = initials(user.name);
-  document.getElementById('del-user-overlay').dataset.uid = uid;
-  document.getElementById('del-user-overlay').classList.add('open');
-}
-function closeDelUserModal() {
-  document.getElementById('del-user-overlay').classList.remove('open');
-}
-function doDeleteUser() {
-  const uid = document.getElementById('del-user-overlay').dataset.uid;
-  DB.users = DB.users.filter(u=>u.id!==uid);
-  saveDB();
-  closeDelUserModal();
-  renderUsersScreen();
-}
+async function submitAuth() {
+  const email = document.getElementById('auth-email').value.trim();
+  const pass = document.getElementById('auth-pass').value;
+  const errEl = document.getElementById('auth-error');
+  errEl.style.color = '';
+  errEl.textContent = '';
+  if (!email || !pass) { errEl.textContent = 'Rellena email y contraseña'; return; }
 
-// Long press para móvil
-let lpTimer = null;
-function startLongPress(uid) { lpTimer = setTimeout(()=>{ lpTimer=null; deleteUser(null,uid); }, 700); }
-function cancelLongPress() { if(lpTimer){clearTimeout(lpTimer);lpTimer=null;} }
-
-function selectUser(uid) {
-  const user = DB.users.find(u=>u.id===uid);
-  if (!user) return;
-  if (user.passHash) {
-    pendingLoginUserId = uid;
-    openLoginOverlay(user);
-  } else {
-    loginUser(uid);
+  const btn = document.getElementById('auth-submit-btn');
+  btn.disabled = true;
+  try {
+    if (authMode === 'signup') {
+      const name = document.getElementById('su-name').value.trim();
+      if (!name) { errEl.textContent = 'Escribe tu nombre'; btn.disabled = false; return; }
+      const { data, error } = await window._sb.signUp(email, pass, name, selectedSignupColor);
+      if (error) throw error;
+      if (!data.session) {
+        errEl.style.color = '#4caf50';
+        errEl.textContent = 'Cuenta creada. Revisa tu email para confirmarla y luego inicia sesión.';
+        btn.disabled = false;
+        return;
+      }
+      await enterApp(data.session.user.id);
+    } else {
+      const { data, error } = await window._sb.signIn(email, pass);
+      if (error) throw error;
+      await enterApp(data.session.user.id);
+    }
+  } catch(e) {
+    errEl.textContent = e.message === 'Invalid login credentials' ? 'Email o contraseña incorrectos' : (e.message || 'Ha ocurrido un error');
   }
+  btn.disabled = false;
 }
 
-function deleteUser(e, uid) {
-  if (e) { e.preventDefault(); e.stopPropagation(); }
-  const user = DB.users.find(u=>u.id===uid);
-  if (!user) return;
-  if (!confirm(`¿Eliminar usuario "${user.name}" y todos sus datos?`)) return;
-  DB.users = DB.users.filter(u=>u.id!==uid);
-  saveDB();
-  renderUsersScreen();
-}
-
-// ══════════════════════════════════════════
-//  LOGIN
-// ══════════════════════════════════════════
-function openLoginOverlay(user) {
-  document.getElementById('login-av').style.background = user.color;
-  document.getElementById('login-av').textContent = initials(user.name);
-  document.getElementById('login-uname').textContent = user.name;
-  document.getElementById('login-hint').textContent = 'Introduce tu contraseña para continuar';
-  document.getElementById('login-pass').value = '';
-  document.getElementById('login-error').textContent = '';
-  document.getElementById('login-overlay').classList.add('open');
-  setTimeout(()=>document.getElementById('login-pass').focus(), 100);
-}
-function closeLoginOverlay() {
-  document.getElementById('login-overlay').classList.remove('open');
-  pendingLoginUserId = null;
-}
-function doLogin() {
-  const pass = document.getElementById('login-pass').value;
-  const user = DB.users.find(u=>u.id===pendingLoginUserId);
-  if (!user) return;
-  if (user.passHash && hashPass(pass) !== user.passHash) {
-    document.getElementById('login-error').textContent = 'Contraseña incorrecta';
-    document.getElementById('login-pass').value = '';
-    document.getElementById('login-pass').focus();
-    return;
-  }
-  document.getElementById('login-overlay').classList.remove('open');
-  loginUser(pendingLoginUserId);
-  pendingLoginUserId = null;
-}
 let _unsubscribeUserData = null;
 
-function loginUser(uid) {
+async function enterApp(uid) {
   currentUserId = uid;
-  const user = currentUser();
-  migrateUserData(user);
+  try { profile = await window._sb.getProfile(uid); }
+  catch(e) { console.warn('No se pudo cargar el perfil', e); profile = { id: uid, name: 'Usuario', color: PALETTE[0] }; }
+  await loadUserData(uid);
+  migrateUserData(userDataCache);
+
   // Header
-  document.getElementById('hdr-av').style.background = user.color;
-  document.getElementById('hdr-av').textContent = initials(user.name);
-  document.getElementById('hdr-name').textContent = user.name;
+  document.getElementById('hdr-av').style.background = profile.color;
+  document.getElementById('hdr-av').textContent = initials(profile.name);
+  document.getElementById('hdr-name').textContent = profile.name;
   // Activar pantalla app
-  document.getElementById('screen-users').classList.remove('active');
+  document.getElementById('screen-auth').classList.remove('active');
   document.getElementById('screen-app').classList.add('active');
   activeStore = userData().stores.length ? userData().stores[0].id : null;
   checkMonthlyReset();
@@ -825,116 +758,89 @@ function loginUser(uid) {
   renderSidebar();
   renderPanel();
 
-  // Suscribirse a cambios en tiempo real de Firebase
-  if (window._fb) {
-    if (_unsubscribeUserData) _unsubscribeUserData();
-    _unsubscribeUserData = window._fb.subscribeUserData(uid, (remoteData) => {
-      if (!remoteData || currentUserId !== uid) return;
-      const user = DB.users.find(u => u.id === uid);
-      if (!user) return;
-      user.data = remoteData;
-      migrateUserData(user);
-      saveLocalOnly();
-      // Re-renderizar solo si la app está activa
-      if (document.getElementById('screen-app').classList.contains('active')) {
-        activeStore = userData().stores.length
-          ? (userData().stores.find(s => s.id === activeStore) ? activeStore : userData().stores[0].id)
-          : null;
-        renderHeaderMonthly();
-        renderSidebar();
-        renderPanel();
-      }
-    });
-  }
+  // Suscribirse a cambios en tiempo real de Supabase
+  if (_unsubscribeUserData) _unsubscribeUserData();
+  _unsubscribeUserData = window._sb.subscribeUserData(uid, (remoteData) => {
+    if (!remoteData || currentUserId !== uid) return;
+    userDataCache = remoteData;
+    migrateUserData(userDataCache);
+    saveLocalCache();
+    // Re-renderizar solo si la app está activa
+    if (document.getElementById('screen-app').classList.contains('active')) {
+      activeStore = userData().stores.length
+        ? (userData().stores.find(s => s.id === activeStore) ? activeStore : userData().stores[0].id)
+        : null;
+      renderHeaderMonthly();
+      renderSidebar();
+      renderPanel();
+    }
+  });
 }
 
-function logout() {
+async function logout() {
   if (_unsubscribeUserData) { _unsubscribeUserData(); _unsubscribeUserData = null; }
+  try { await window._sb.signOut(); } catch(e) {}
   currentUserId = null;
+  profile = null;
+  userDataCache = null;
   activeStore = null;
   document.getElementById('screen-app').classList.remove('active');
-  document.getElementById('screen-users').classList.add('active');
+  document.getElementById('screen-auth').classList.add('active');
   showViewInternal('shop');
-  renderUsersScreen();
+  document.getElementById('auth-email').value = '';
+  document.getElementById('auth-pass').value = '';
+  showAuthTab('login');
 }
 
 // ══════════════════════════════════════════
-//  MODAL CREAR USUARIO
+//  MODAL MI PERFIL
 // ══════════════════════════════════════════
-function openNewUserModal() {
-  editingUserId = null;
-  selectedUserColor = PALETTE[0];
-  document.getElementById('nu-modal-title').textContent = 'Nuevo usuario';
-  document.getElementById('nu-modal-sub').textContent = 'Crea tu perfil personal';
-  document.getElementById('nu-pass-label').textContent = 'Contraseña (opcional)';
-  document.getElementById('nu-confirm-btn').textContent = 'Crear';
-  document.getElementById('nu-pass').placeholder = 'Dejar vacío = sin contraseña';
-  buildPalette('nu-palette', selectedUserColor, 'selectUserColor');
-  document.getElementById('nu-name').value = '';
-  document.getElementById('nu-pass').value = '';
-  updateUserPreview();
-  document.getElementById('new-user-overlay').classList.add('open');
-  setTimeout(()=>document.getElementById('nu-name').focus(), 100);
+function openProfileModal() {
+  selectedProfileColor = profile.color;
+  buildPalette('pf-palette', selectedProfileColor, 'selectProfileColor');
+  document.getElementById('pf-name').value = profile.name;
+  document.getElementById('pf-pass').value = '';
+  document.getElementById('pf-error').textContent = '';
+  updateProfilePreview();
+  document.getElementById('profile-overlay').classList.add('open');
 }
-function openEditUserModal(uid) {
-  const user = DB.users.find(u=>u.id===uid);
-  if (!user) return;
-  editingUserId = uid;
-  selectedUserColor = user.color;
-  document.getElementById('nu-modal-title').textContent = 'Editar usuario';
-  document.getElementById('nu-modal-sub').textContent = 'Modifica tu nombre, color o contraseña';
-  document.getElementById('nu-pass-label').textContent = 'Nueva contraseña (opcional)';
-  document.getElementById('nu-confirm-btn').textContent = 'Guardar';
-  document.getElementById('nu-pass').placeholder = 'Vacío = mantener la actual';
-  buildPalette('nu-palette', selectedUserColor, 'selectUserColor');
-  document.getElementById('nu-name').value = user.name;
-  document.getElementById('nu-pass').value = '';
-  updateUserPreview();
-  document.getElementById('new-user-overlay').classList.add('open');
-  setTimeout(()=>document.getElementById('nu-name').focus(), 100);
+function closeProfileModal(e) {
+  if (e && e.target !== document.getElementById('profile-overlay')) return;
+  document.getElementById('profile-overlay').classList.remove('open');
 }
-function closeNewUserModal(e) {
-  if (e && e.target !== document.getElementById('new-user-overlay')) return;
-  document.getElementById('new-user-overlay').classList.remove('open');
+function selectProfileColor(c) {
+  selectedProfileColor = c;
+  buildPalette('pf-palette', c, 'selectProfileColor');
+  updateProfilePreview();
 }
-function selectUserColor(c) {
-  selectedUserColor = c;
-  buildPalette('nu-palette', c, 'selectUserColor');
-  updateUserPreview();
+function updateProfilePreview() {
+  const name = document.getElementById('pf-name').value.trim() || '—';
+  document.getElementById('pf-prev-av').style.background = selectedProfileColor;
+  document.getElementById('pf-prev-av').textContent = name !== '—' ? initials(name) : '?';
+  document.getElementById('pf-prev-name').textContent = name;
 }
-function updateUserPreview() {
-  const name = document.getElementById('nu-name').value.trim() || '—';
-  document.getElementById('nu-prev-av').style.background = selectedUserColor;
-  document.getElementById('nu-prev-av').textContent = name !== '—' ? initials(name) : '?';
-  document.getElementById('nu-prev-name').textContent = name;
-}
-function confirmNewUser() {
-  const name = document.getElementById('nu-name').value.trim();
-  if (!name) { document.getElementById('nu-name').focus(); return; }
-  const pass = document.getElementById('nu-pass').value;
+async function confirmProfile() {
+  const name = document.getElementById('pf-name').value.trim();
+  const errEl = document.getElementById('pf-error');
+  errEl.textContent = '';
+  if (!name) { document.getElementById('pf-name').focus(); return; }
+  const pass = document.getElementById('pf-pass').value;
 
-  if (editingUserId) {
-    // Modo edición
-    const user = DB.users.find(u=>u.id===editingUserId);
-    if (!user) return;
-    user.name = name;
-    user.color = selectedUserColor;
-    if (pass) user.passHash = hashPass(pass);
-    // Si estaba en sesión, actualizar header
-    if (currentUserId === editingUserId) {
-      document.getElementById('hdr-av').style.background = user.color;
-      document.getElementById('hdr-av').textContent = initials(user.name);
-      document.getElementById('hdr-name').textContent = user.name;
-    }
-  } else {
-    // Modo creación
-    const user = { id: uid(), name, color: selectedUserColor, passHash: pass ? hashPass(pass) : null, data: makeUserData() };
-    DB.users.push(user);
+  const btn = document.getElementById('pf-confirm-btn');
+  btn.disabled = true;
+  try {
+    await window._sb.updateProfile(currentUserId, { name, color: selectedProfileColor });
+    if (pass) await window._sb.updatePassword(pass);
+    profile.name = name;
+    profile.color = selectedProfileColor;
+    document.getElementById('hdr-av').style.background = profile.color;
+    document.getElementById('hdr-av').textContent = initials(profile.name);
+    document.getElementById('hdr-name').textContent = profile.name;
+    document.getElementById('profile-overlay').classList.remove('open');
+  } catch(e) {
+    errEl.textContent = e.message || 'No se pudo guardar';
   }
-
-  saveDB();
-  document.getElementById('new-user-overlay').classList.remove('open');
-  renderUsersScreen();
+  btn.disabled = false;
 }
 
 // ══════════════════════════════════════════
@@ -972,7 +878,7 @@ function renderSidebar() {
       <div class="store-card" onclick="selectStore('${st.id}')" style="${activeBorder}${activeBg}">
         <div style="position:absolute;left:0;top:0;bottom:0;width:3px;border-radius:0 2px 2px 0;background:${st.color}"></div>
         <div class="sc-top">
-          <div class="sc-name" style="color:${st.color}">${st.name}</div>
+          <div class="sc-name" style="color:${st.color}">${esc(st.name)}</div>
           <button class="sc-del" onclick="deleteStore(event,'${st.id}')" title="Eliminar">✕</button>
         </div>
         <div class="sc-meta"><span>${done}/${total}</span><span>${priceStr}</span></div>
@@ -983,7 +889,7 @@ function renderSidebar() {
   let totHtml = '';
   D.stores.forEach(st => {
     const p = D.prices[st.id];
-    totHtml += `<div class="tb-row"><span class="tb-store" style="color:${st.color}">${st.name}</span><span class="tb-val">${p?parseFloat(p).toFixed(2)+'€':'—'}</span></div>`;
+    totHtml += `<div class="tb-row"><span class="tb-store" style="color:${st.color}">${esc(st.name)}</span><span class="tb-val">${p?parseFloat(p).toFixed(2)+'€':'—'}</span></div>`;
   });
   document.getElementById('tot-rows').innerHTML = totHtml;
   const vals = D.stores.map(st=>parseFloat(D.prices[st.id])||0);
@@ -1034,7 +940,7 @@ function renderPanel() {
   document.getElementById('panel-content').innerHTML = `
     <div class="store-panel">
       <div class="panel-top">
-        <div class="panel-title" style="color:${st.color}">${st.name}</div>
+        <div class="panel-title" style="color:${st.color}">${esc(st.name)}</div>
         <div class="panel-stat">
           <div class="panel-frac" style="color:${st.color}">${done}<span style="font-weight:300;opacity:0.4">/${total}</span></div>
           <div class="panel-pct">${pct}% en carrito</div>
@@ -1056,7 +962,7 @@ function itemRow(it, sid) {
   const pickBtnHtml = it.done ? `<button class="pick-btn" onclick="togglePicked('${sid}','${it.id}',event)">${it.picked?'✓ Cogido':'✓ Coger'}</button>` : '';
   return `<div class="item-row ${dc} ${pc}" id="ir-${it.id}">
     <button class="check-btn" onclick="toggleItem('${sid}','${it.id}')">${it.done?'✓':''}</button>
-    <div class="item-label" onclick="toggleItem('${sid}','${it.id}')">${it.name}</div>
+    <div class="item-label" onclick="toggleItem('${sid}','${it.id}')">${esc(it.name)}</div>
     ${pickBtnHtml}
     <button class="del-btn" onclick="delItem('${sid}','${it.id}')">✕</button>
   </div>`;
@@ -1158,7 +1064,7 @@ function openFinModal() {
     const total = items.length;
     const p = D.prices[st.id]||'';
     html += `<div class="modal-store-row">
-      <div class="modal-store-name" style="color:${st.color}">${st.name}</div>
+      <div class="modal-store-name" style="color:${st.color}">${esc(st.name)}</div>
       <div class="modal-items-count">${inCart} de ${total}</div>
       <div class="modal-price-wrap">
         <input type="number" class="modal-price-in" id="mp-${st.id}" value="${p}" placeholder="0.00" min="0" step="0.01" oninput="updateFinTotal()">
@@ -1277,8 +1183,8 @@ function renderHistory() {
     const totalStr = hasPrice ? `${total.toFixed(2)}€` : 'Sin precio';
     const storesHTML = Object.entries(entry.stores).map(([sid,sd])=>{
       const priceStr = sd.price?`${parseFloat(sd.price).toFixed(2)}€`:'—';
-      const sample = sd.items.length ? sd.items.slice(0,7).join(', ')+(sd.items.length>7?` y ${sd.items.length-7} más…`:'') : 'Sin artículos marcados';
-      return `<div class="hist-srow"><div class="hist-sname" style="color:${sd.color||'#9c9489'}">${sd.name||sid}</div><div class="hist-sitems">${sample}</div><div class="hist-sprice">${priceStr}</div></div>`;
+      const sample = sd.items.length ? esc(sd.items.slice(0,7).join(', '))+(sd.items.length>7?` y ${sd.items.length-7} más…`:'') : 'Sin artículos marcados';
+      return `<div class="hist-srow"><div class="hist-sname" style="color:${sd.color||'#9c9489'}">${esc(sd.name||sid)}</div><div class="hist-sitems">${sample}</div><div class="hist-sprice">${priceStr}</div></div>`;
     }).join('');
     return `<div class="hist-entry" id="he-${entry.id}">
       <div class="hist-head" onclick="toggleHistEntry('${entry.id}')">
@@ -1343,8 +1249,8 @@ function buildPalette(containerId, selected, onClickFn) {
   document.getElementById(containerId).innerHTML = PALETTE.map(c=>`
     <div class="color-swatch${c===selected?' selected':''}" style="background:${c}" onclick="${onClickFn}('${c}')"></div>`).join('');
 }
-function migrateUserData(user) {
-  const D = user.data;
+function migrateUserData(D) {
+  if (!D) return;
   if (!D.history) D.history = [];
   if (!D.monthlyHistory) D.monthlyHistory = [];
   if (!D.monthlySpend) { const now=new Date(); D.monthlySpend={amount:0,month:now.getMonth(),year:now.getFullYear()}; }
@@ -1359,68 +1265,26 @@ function migrateUserData(user) {
 }
 
 // ══════════════════════════════════════════
-//  MIGRACIÓN DATOS ANTERIORES
-// ══════════════════════════════════════════
-(function migrate() {
-  // Renombrar usuario "Principal" a "Brus" si existe
-  DB.users.forEach(u => { if (u.name === 'Principal') u.name = 'Brus'; });
-
-  // Si no hay usuarios y hay datos de versión anterior, crear usuario "Brus" con esos datos
-  if (DB.users.length === 0) {
-    try {
-      const old4 = localStorage.getItem('cesta4');
-      const old3 = localStorage.getItem('cesta3');
-      const raw = old4 || old3;
-      if (raw) {
-        const O = JSON.parse(raw);
-        const data = makeUserData();
-        if (O.stores) data.stores = O.stores.map(s=>({id:s.id,name:s.name,color:s.color}));
-        if (O.items) { for(const [k,v] of Object.entries(O.items)) data.items[k]=v.map(it=>({...it,picked:it.picked||false})); }
-        if (O.prices) data.prices = O.prices;
-        if (O.history) data.history = O.history.map(e=>{
-          const stores={};
-          for(const [sid,sd] of Object.entries(e.stores||{})){
-            const def=DEFAULT_STORES.find(d=>d.id===sid);
-            stores[sid]={name:sd.name||def?.name||sid,color:sd.color||def?.color||'#9c9489',...sd};
-          }
-          return {...e,stores};
-        });
-        if (O.monthlySpend) data.monthlySpend = O.monthlySpend;
-        if (O.monthlyHistory) data.monthlyHistory = O.monthlyHistory;
-        const newUser = {id:uid(), name:'Brus', color:'#0055b3', passHash:null, data};
-        DB.users.push(newUser);
-        saveLocalOnly();
-        // Subir a Firebase en cuanto esté listo
-        if (window._fb) {
-          window._fb.saveUsers(DB.users);
-          window._fb.saveUserData(newUser.id, newUser.data);
-        } else {
-          document.addEventListener('fb-ready', () => {
-            window._fb.saveUsers(DB.users);
-            window._fb.saveUserData(newUser.id, newUser.data);
-          }, {once:true});
-        }
-      }
-    } catch(e) {}
-  }
-
-  saveLocalOnly();
-})();
-
-// ══════════════════════════════════════════
 //  INIT
 // ══════════════════════════════════════════
-// Mostrar pantalla de usuarios desde localStorage mientras carga Firebase
-renderUsersScreen();
+async function initApp() {
+  showAuthTab('login');
+  const session = await window._sb.getSession();
+  if (session) await enterApp(session.user.id);
 
-// Cuando Firebase esté listo, sincronizar y re-renderizar
-function onFbReady() {
-  initFromFirebase();
+  window._sb.onAuthChange((event) => {
+    if (event === 'SIGNED_OUT' && currentUserId) {
+      if (_unsubscribeUserData) { _unsubscribeUserData(); _unsubscribeUserData = null; }
+      currentUserId = null; profile = null; userDataCache = null;
+      document.getElementById('screen-app').classList.remove('active');
+      document.getElementById('screen-auth').classList.add('active');
+    }
+  });
 }
-if (window._fbReady) {
-  onFbReady();
+if (window._sbReady) {
+  initApp();
 } else {
-  document.addEventListener('fb-ready', onFbReady, {once: true});
+  document.addEventListener('sb-ready', initApp, {once: true});
 }
 
 </script>
