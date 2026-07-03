@@ -1365,14 +1365,6 @@ function migrateUserData(user) {
   // Renombrar usuario "Principal" a "Brus" si existe
   DB.users.forEach(u => { if (u.name === 'Principal') u.name = 'Brus'; });
 
-  // Asegurar contraseña de Brus
-  const brus = DB.users.find(u => u.name === 'Brus');
-  if (brus && !brus.passHash) {
-    let h = 0;
-    for (let i = 0; i < 'BrunoCris'.length; i++) h = (Math.imul(31, h) + 'BrunoCris'.charCodeAt(i)) | 0;
-    brus.passHash = h.toString(36);
-  }
-
   // Si no hay usuarios y hay datos de versión anterior, crear usuario "Brus" con esos datos
   if (DB.users.length === 0) {
     try {
