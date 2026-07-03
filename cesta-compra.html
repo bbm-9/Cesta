@@ -1071,7 +1071,26 @@ function deleteStore(e, sid) {
 //  RECUPERAR DATOS ANTIGUOS (copia de Firebase, antes de migrar a Supabase)
 // ══════════════════════════════════════════
 const LEGACY_FIREBASE_URL = 'https://mi-cesta-default-rtdb.europe-west1.firebasedatabase.app/.json';
-let _legacyRemote = null;
+let _legacyUsers = null;
+
+function readLegacyLocalStorage() {
+  try {
+    const raw = localStorage.getItem('cesta_db');
+    if (!raw) return null;
+    const local = JSON.parse(raw);
+    if (!local || !Array.isArray(local.users) || !local.users.length) return null;
+    return local.users.map(u => ({ id: u.id, name: u.name, color: u.color, data: u.data }));
+  } catch(e) { return null; }
+}
+
+async function readLegacyFirebase() {
+  const res = await fetch(LEGACY_FIREBASE_URL);
+  if (!res.ok) throw new Error('No se pudo conectar con la copia antigua (' + res.status + ')');
+  const remote = await res.json();
+  if (remote && remote.error) throw new Error('Acceso denegado a la copia antigua: ' + remote.error);
+  const remoteUsers = remote && remote.users ? Object.values(remote.users) : [];
+  return remoteUsers.map(u => ({ id: u.id, name: u.name, color: u.color, data: remote.userData && remote.userData[u.id] }));
+}
 
 async function openLegacyImport() {
   const listEl = document.getElementById('legacy-list');
@@ -1079,23 +1098,33 @@ async function openLegacyImport() {
   listEl.innerHTML = '<div style="color:rgba(255,255,255,0.4);font-size:0.85rem">Buscando…</div>';
   errEl.textContent = '';
   document.getElementById('legacy-overlay').classList.add('open');
-  try {
-    const res = await fetch(LEGACY_FIREBASE_URL);
-    if (!res.ok) throw new Error('No se pudo conectar con la copia antigua (' + res.status + ')');
-    const remote = await res.json();
-    if (remote && remote.error) throw new Error('Acceso denegado a la copia antigua: ' + remote.error);
-    _legacyRemote = remote;
-    const users = remote && remote.users ? Object.values(remote.users) : [];
-    if (!users.length) { listEl.innerHTML = ''; errEl.textContent = 'No se encontraron perfiles en la copia antigua.'; return; }
-    listEl.innerHTML = users.map(u => `
-      <button class="user-preview" style="width:100%;border:1.5px solid rgba(255,255,255,0.12);cursor:pointer;text-align:left;font-family:'Syne',sans-serif;outline:none" onclick="importLegacyUser('${u.id}')">
-        <div class="up-avatar" style="background:${u.color||'#0055b3'}">${esc(initials(u.name||'?'))}</div>
-        <div class="up-name">${esc(u.name||'Sin nombre')}</div>
-      </button>`).join('');
-  } catch(e) {
-    listEl.innerHTML = '';
-    errEl.textContent = e.message || 'No se pudo recuperar la copia antigua.';
+
+  // 1. Copia local de este navegador (la versión anterior siempre la guardaba aquí, funcionase o no Firebase)
+  let users = readLegacyLocalStorage();
+  let source = 'local';
+
+  // 2. Si no hay nada en este navegador, intentar la base de datos Firebase antigua (puede fallar si sus reglas exigen login)
+  if (!users) {
+    source = 'firebase';
+    try { users = await readLegacyFirebase(); }
+    catch(e) {
+      listEl.innerHTML = '';
+      errEl.textContent = 'No se encontró ninguna copia en este navegador. ' + (e.message || 'La base de datos antigua tampoco respondió.') + ' Prueba a abrir la app en el mismo navegador/dispositivo donde la usabas antes.';
+      return;
+    }
   }
+
+  _legacyUsers = users;
+  if (!users || !users.length) {
+    listEl.innerHTML = '';
+    errEl.textContent = source === 'local' ? 'La copia de este navegador no tiene perfiles.' : 'No se encontraron perfiles en la copia antigua.';
+    return;
+  }
+  listEl.innerHTML = users.map(u => `
+    <button class="user-preview" style="width:100%;border:1.5px solid rgba(255,255,255,0.12);cursor:pointer;text-align:left;font-family:'Syne',sans-serif;outline:none" onclick="importLegacyUser('${u.id}')">
+      <div class="up-avatar" style="background:${u.color||'#0055b3'}">${esc(initials(u.name||'?'))}</div>
+      <div class="up-name">${esc(u.name||'Sin nombre')}</div>
+    </button>`).join('');
 }
 function closeLegacyModal(e) {
   if (e && e.target !== document.getElementById('legacy-overlay')) return;
@@ -1103,7 +1132,8 @@ function closeLegacyModal(e) {
 }
 function importLegacyUser(oldId) {
   const errEl = document.getElementById('legacy-error');
-  const oldData = _legacyRemote && _legacyRemote.userData && _legacyRemote.userData[oldId];
+  const found = _legacyUsers && _legacyUsers.find(u => u.id === oldId);
+  const oldData = found && found.data;
   if (!oldData) { errEl.textContent = 'Ese perfil no tiene datos guardados.'; return; }
   if (!confirm('Esto reemplazará tus supermercados, artículos e historial actuales por los de la copia antigua. ¿Continuar?')) return;
   userDataCache = oldData;
